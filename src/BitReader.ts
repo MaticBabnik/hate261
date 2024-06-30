@@ -1,6 +1,28 @@
 // bit reader class
 import { VLCTree } from "./treegen";
 
+
+function LogBitReader(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    const originalMethod = descriptor.value;
+
+    descriptor.value = function (...args: any[]) {
+        if (typeof args[0] === 'number') {
+            console.log(`${propertyKey} ${args[0]}`);
+        } else {
+            console.log(propertyKey)
+        }
+        const result = originalMethod.apply(this, args);
+        // Print the class's `.at` property after method execution
+        //@ts-ignore
+        console.trace(`at: ${this.at.toString(16)}`);
+
+        return result;
+    };
+
+    return descriptor;
+}
+
+
 export class BitReader {
 
     private array: Uint8Array;
@@ -78,5 +100,9 @@ export class BitReader {
             }
 
         }
+    }
+
+    public get at() {
+        return this.byte * 8 + (7 - this.bit);
     }
 }

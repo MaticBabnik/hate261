@@ -280,7 +280,6 @@ const TCOEFF = {
     4095: [0, 0, 0, 0, 0, 1],
 }
 
-
 export const MBA_TREE: VLCTree = {
     0: {
         0: {
@@ -1077,11 +1076,13 @@ export const TCOEFF_TREE: VLCTree = {
         }
     },
     1: {
-        0: 1025,
-        1: 3073
+        0: 0,
+        1: {
+            0: 1,
+            1: 2049
+        }
     }
 }
-
 
 // tcoeff that is read is
 // sf_r rrrr llll (sign,first?,run,level)

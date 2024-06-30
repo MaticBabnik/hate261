@@ -1,8 +1,8 @@
 // h262 constants
 
 export const PSC = 0x10;
-export const PTYPE_IS_CIF = (1 << 3);
-export const PTYPE_STILL = (1 << 4);
+export const PTYPE_IS_CIF = (1 << 2);
+export const PTYPE_STILL = (1 << 1);
 export const GBSC = 1;
 export const INTER_BIT = 1;
 export const MOTION_COMPENSATION_BIT = 2;
