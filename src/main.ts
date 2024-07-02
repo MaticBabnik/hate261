@@ -1,5 +1,4 @@
 import { BitReader } from "./BitReader";
-// import "./treegen"
 import { Frame } from "./dec";
 
 const canvas = document.getElementById('output') as HTMLCanvasElement;
@@ -19,16 +18,19 @@ function canvasCheckerboard() {
 }
 
 async function main() {
-    // const res = await fetch("badapple.h261");
+    // const res = await fetch("badapple-2s.h261");
     const res = await fetch("rickroll.h261");
     const buf = await res.arrayBuffer();
 
     const br = new BitReader(buf);
-    
+
     let previousFrame: Frame | undefined = undefined;
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 1; i++) {
+        console.time('frame')
         const fr: Frame = new Frame(br, previousFrame, i);
+        console.log(fr);
         fr.paint(g);
+        console.timeEnd('frame')
         previousFrame = fr;
     }
 }

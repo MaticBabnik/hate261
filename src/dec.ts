@@ -6,7 +6,7 @@ type MVector = [number, number];
 
 interface Block {
     index: number,
-    data: Uint8Array,
+    data: Uint8ClampedArray,
 }
 
 interface Macroblock {
@@ -35,6 +35,9 @@ function reconstruct(level: number, quant: number) {
     return clip(quant * (2 * level + lp) + qe, -2048, 2047);
 }
 
+// @ts-ignore
+window.reconstruct = reconstruct;
+
 function reconstructDC(level: number): number {
     if (level === 0 || level === 128) {
         throw "Invalid DC: 0 and 128 are not allowed";
@@ -46,47 +49,54 @@ function reconstructDC(level: number): number {
 }
 
 const { SQRT2, PI } = Math;
+const ISQ2 = (1 / SQRT2);
 
-function idct(block: Uint8Array) {
-    const result = new Uint8Array(64);
+function alpha(x: number) {
+    return x === 0 ? ISQ2 : 1
+}
 
-    // for (let x = 0; x < 8; x++) {
-    //     for (let y = 0; y < 8; y++) {
-    //         let sum = 0;
-    //         for (let u = 0; u < 8; u++) {
-    //             for (let v = 0; v < 8; v++) {
-    //                 const Cu = u === 0 ? 1 / SQRT2 : 1;
-    //                 const Cv = v === 0 ? 1 / SQRT2 : 1;
-    //                 const dctCoeff = block[u + v * 8];
-    //                 sum += Cu * Cv * dctCoeff *
-    //                     Math.cos(((2 * x + 1) * u * PI) / 16) *
-    //                     Math.cos(((2 * y + 1) * v * PI) / 16);
-    //             }
-    //         }
-    //         result[x + y * 8] = (1 / 4) * sum;
-    //     }
-    // }
+export function idct(block: Int16Array) {
+    const result = new Uint8ClampedArray(64);
 
     for (let y = 0; y < 8; y++) {
         for (let x = 0; x < 8; x++) {
             let sum = 0;
-            for (let u = 0; u < 8; u++) {
-                for (let v = 0; v < 8; v++) {
-                    const Cu = u === 0 ? 1 / SQRT2 : 1;
-                    const Cv = v === 0 ? 1 / SQRT2 : 1;
-                    const index = u * 8 + v;
-                    const dctCoeff = block[index];
-                    sum += Cu * Cv * dctCoeff *
-                        Math.cos(((2 * x + 1) * u * PI) / 16) *
-                        Math.cos(((2 * y + 1) * v * PI) / 16);
+
+            for (let v = 0; v < 8; v++) {
+                for (let u = 0; u < 8; u++) {
+
+                    sum += alpha(u) * alpha(v) * block[u + v * 8] *
+                        Math.cos((PI * (2 * x + 1) * u) / 16) *
+                        Math.cos((PI * (2 * y + 1) * v) / 16);
                 }
             }
-            const alpha = (x === 0 ? 1 / SQRT2 : 1) * (y === 0 ? 1 / SQRT2 : 1);
-            result[x * 8 + y] = (1 / 4) * alpha * sum;
+            result[y * 8 + x] = (sum / 4);
         }
     }
     return result;
 }
+
+export function dct(block: Uint8Array) {
+    const result = new Int16Array(64);
+    for (let v = 0; v < 8; v++) {
+        for (let u = 0; u < 8; u++) {
+            let sum = 0;
+
+            for (let y = 0; y < 8; y++) {
+                for (let x = 0; x < 8; x++) {
+                    sum += block[x + y * 8]
+                        * Math.cos((PI * (2 * x + 1) * u) / 16)
+                        * Math.cos((PI * (2 * y + 1) * v) / 16);
+                }
+            }
+
+            result[u + v * 8] = (sum / 4) * alpha(u) * alpha(v);
+        }
+    }
+
+    return result;
+}
+
 
 function writeRgb(dst: Uint8ClampedArray, index: number, y: number, u: number, v: number) {
     // https://en.wikipedia.org/wiki/YCbCr#ITU-R_BT.601_conversion
@@ -96,8 +106,8 @@ function writeRgb(dst: Uint8ClampedArray, index: number, y: number, u: number, v
     dst[index + 3] = 255;
 }
 
-function getMacroblockImageDataFromYuv(data: Uint8Array[]) {
-    const cCb = data[4], cCr = data[5];
+function getMacroblockImageDataFromYuv(data: Uint8ClampedArray[]) {
+    const cCb = data[5], cCr = data[4];
 
     const id = new ImageData(16, 16, { colorSpace: 'srgb' });
 
@@ -105,6 +115,7 @@ function getMacroblockImageDataFromYuv(data: Uint8Array[]) {
         const cY = data[i];
         const xa = i & 1 ? 8 : 0;
         const ya = i & 2 ? 8 : 0;
+
         for (let x = xa; x < xa + 8; x++) {
             for (let y = ya; y < ya + 8; y++) {
                 const cyi = (x & 7) + 8 * (y & 7);
@@ -172,7 +183,7 @@ export class Frame {
         }
 
         const mtype = h261.MTYPE[this.br.countLeadingZeroes()];
-        console.log(this.mba, h261.getMtypeString(mtype));
+        // console.log(this.mba, h261.getMtypeString(mtype));
 
         const mb: Macroblock = {
             address: this.mba,
@@ -195,13 +206,11 @@ export class Frame {
             }
 
             const mvd1 = this.br.readVlcOr(vlc.MVD_TREE, -1);
-            /*
-                TODO(mbabnik): track motion vectors; and if we should do the diff 
-                thing, since we then read an extra bit? 
-            */
+            //TODO(mbabnik): motion vectors
             const mvd2 = this.br.readVlcOr(vlc.MVD_TREE, -1);
 
-            console.log({ previousMv, mvd1, mvd2 })
+            void mvd1;
+            void mvd2;
 
             mb.mvd = [0, 0];
         }
@@ -216,7 +225,7 @@ export class Frame {
             }
             mb.cbp = cbp;
 
-            const tmpBlock = new Uint8Array(64);
+            const tmpBlock = new Int16Array(64);
 
             // for each block (in a macroblock)
             block: for (let i = 0; i < 6; i++) {
@@ -226,10 +235,10 @@ export class Frame {
                 const coded = !!(cbp & (1 << (5 - i)));
 
                 if (!(mtype.prediction & h261.INTER_BIT)) { // INTRA
-                    const dcCoefLvl = (this.br.readInt(8) << 24) >> 24; // sign extend i8
+                    const dcCoefLvl = this.br.readInt(8);
                     tmpBlock[0] = reconstructDC(dcCoefLvl);
                     j = 1;
-                } else if (coded)  {
+                } else if (coded) {
                     const check = this.br.peekInt(2);
                     if (check & 0x2) {
                         this.br.readInt(2);
@@ -267,9 +276,9 @@ export class Frame {
                             reconstruct(level, mb.mquant ?? gquant);
                     }
                 }
-
                 mb.blocks[i] = { data: idct(tmpBlock), index: i };
             }
+            // throw "time to throw pogchamp";
         }
         return mb;
     }
@@ -289,7 +298,7 @@ export class Frame {
             console.log('Discarding extra byte:', this.br.readInt(8))
         }
 
-        console.groupCollapsed(`GOB ${groupNumber}`)
+        // console.groupCollapsed(`GOB ${groupNumber}`)
 
         // console.log({ groupNumber, gquant, at: this.br.at.toString(16) })
         const macroblocks = [];
@@ -317,7 +326,7 @@ export class Frame {
     }
 
     protected read() {
-        console.groupCollapsed(`frame ${this.frameNumber}`)
+        // console.groupCollapsed(`frame ${this.frameNumber}`)
 
         while (this.br.peekInt(20) != h261.PSC) {
             this.br.readInt(1);
@@ -345,7 +354,7 @@ export class Frame {
             this.gobs[i] = this.readGob(i);
         }
 
-        console.groupEnd();
+        // console.groupEnd();
     }
 
 
