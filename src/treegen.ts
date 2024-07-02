@@ -4,6 +4,7 @@ export interface VLCTree {
     [index: number]: VLCTree | number
 }
 
+
 export function buildTree(arr: Record<number, number[]>): VLCTree {
     const tree: VLCTree = {};
 
@@ -31,7 +32,6 @@ export function buildTree(arr: Record<number, number[]>): VLCTree {
     return tree;
 }
 
-
 // console.log(
-//     buildTree(TCOEFF)
+//     buildTree(MBA)
 // )

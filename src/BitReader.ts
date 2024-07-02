@@ -1,34 +1,11 @@
 // bit reader class
 import { VLCTree } from "./treegen";
 
-
-function LogBitReader(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-    const originalMethod = descriptor.value;
-
-    descriptor.value = function (...args: any[]) {
-        if (typeof args[0] === 'number') {
-            console.log(`${propertyKey} ${args[0]}`);
-        } else {
-            console.log(propertyKey)
-        }
-        const result = originalMethod.apply(this, args);
-        // Print the class's `.at` property after method execution
-        //@ts-ignore
-        console.trace(`at: ${this.at.toString(16)}`);
-
-        return result;
-    };
-
-    return descriptor;
-}
-
-
 export class BitReader {
 
     private array: Uint8Array;
     private byte = 0;
-    private bit = 7;
-
+    private bit = 0; // encodes bit postition (0x80 >> bit)
 
     public constructor(b: ArrayBuffer) {
         this.array = new Uint8Array(b);
@@ -40,12 +17,11 @@ export class BitReader {
         let out = 0;
 
         while (bits-- > 0) {
-            out = (out << 1) | ((this.array[this.byte] >> this.bit) & 1);
+            out |= ((this.array[this.byte]) & (0x80 >> this.bit)) ? (1 << bits) : 0;
 
-            this.bit--;
-
-            if (this.bit == -1) {
-                this.bit = 7;
+            this.bit++;
+            if (this.bit == 8) {
+                this.bit = 0;
                 this.byte++;
             }
         }
@@ -62,12 +38,11 @@ export class BitReader {
         let out = 0;
 
         while (bits-- > 0) {
-            out = (out << 1) | ((this.array[lbyte] >> lbit) & 1);
+            out |= ((this.array[lbyte]) & (0x80 >> lbit)) ? (1 << bits) : 0;
 
-            lbit--;
-
-            if (lbit == -1) {
-                lbit = 7;
+            lbit++;
+            if (lbit == 8) {
+                lbit = 0;
                 lbyte++;
             }
         }
@@ -102,7 +77,42 @@ export class BitReader {
         }
     }
 
+    public readVlcOr<T>(tree: VLCTree, defaultValue: T): number | T {
+        const trace = [];
+        let at = tree;
+        for (; ;) {
+            const bit = this.readInt(1);
+            trace.push(bit);
+            const newAt = at[bit];
+
+            switch (typeof newAt) {
+                case "undefined":
+                    console.warn("VLC trace:", trace.join(''))
+                    return defaultValue;
+                case "number":
+                    return newAt;
+                default:
+                    at = newAt;
+            }
+
+        }
+    }
+
     public get at() {
         return this.byte * 8 + (7 - this.bit);
+    }
+
+    public move(offset: number) {
+        this.bit += offset;
+
+        this.byte += ~~(this.bit / 8); // divide and truncate(round towards zero?)
+        this.bit %= 8;
+
+        if (this.bit < 0) {
+            //take care of the last byte if negative
+            this.bit += 8;
+            this.byte -= 1;
+        }
+
     }
 }

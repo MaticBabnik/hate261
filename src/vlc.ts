@@ -2,8 +2,8 @@
 
 import type { VLCTree } from "./treegen";
 
-const MBA = [
-    [],
+export const MBA = [
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
     [1],
     [0, 1, 1],
     [0, 1, 0],
@@ -38,7 +38,6 @@ const MBA = [
     [0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1],
     [0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
 ]
 
 const MVD = {
@@ -280,7 +279,8 @@ const TCOEFF = {
     4095: [0, 0, 0, 0, 0, 1],
 }
 
-export const MBA_TREE: VLCTree = {
+export const MBA_TREE: VLCTree = 
+{
     0: {
         0: {
             0: {
@@ -296,7 +296,7 @@ export const MBA_TREE: VLCTree = {
                                                     0: {
                                                         0: {
                                                             0: {
-                                                                1: 35
+                                                                1: 0
                                                             }
                                                         }
                                                     }
@@ -1093,3 +1093,8 @@ export function decodeTcoeff(x: number): [number, number] {
 
     return [run, neg ? -level : level]
 }
+
+// shut up typescript
+void MVD;
+void CBP;
+void TCOEFF;
