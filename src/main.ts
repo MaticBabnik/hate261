@@ -18,8 +18,8 @@ function canvasCheckerboard() {
 }
 
 async function main() {
-    // const res = await fetch("badapple-2s.h261");
-    const res = await fetch("rickroll.h261");
+    const res = await fetch("badapple-2s.h261");
+    // const res = await fetch("rickroll.h261");
     const buf = await res.arrayBuffer();
 
     const br = new BitReader(buf);

@@ -24,6 +24,11 @@
             top: 0;
             left: 0;
             z-index: 100;
+            opacity: .5;
+        }
+
+        .hide {
+            display: none;
         }
     </style>
   </head>
@@ -31,8 +36,15 @@
     <div id="app">
         <canvas id="output" width="352" height="288">
         </canvas>
-        <img src="mbgrid.svg" alt="">
+        <img src="mbgrid.svg" id="grid" class="hide" alt="">
     </div>
+    <script>
+        function toggleGrid() {
+            const img = document.getElementById('grid');
+            img.classList.toggle('hide');
+        }
+    </script>
+    <button onclick="toggleGrid()">Toggle Grid</button>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
