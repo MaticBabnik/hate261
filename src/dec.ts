@@ -28,6 +28,12 @@ interface GroupOfBlocks {
     macroblocks: Macroblock[];
 }
 
+interface YUV {
+    y: Uint8ClampedArray,
+    cb: Uint8ClampedArray,
+    cr: Uint8ClampedArray,
+}
+
 function clip(x: number, min: number, max: number) {
     return Math.max(min, Math.min(x, max));
 }
@@ -44,7 +50,7 @@ window.reconstruct = reconstruct;
 
 function reconstructDC(level: number): number {
     if (level === 0 || level === 128) {
-        throw "Invalid DC: 0 and 128 are not allowed";
+        throw new Error("Invalid DC: 0 and 128 are not allowed");
     } else if (level === 255) {
         return 1024;
     } else {
@@ -52,55 +58,112 @@ function reconstructDC(level: number): number {
     }
 }
 
-
-
 function writeRgb(dst: Uint8ClampedArray, index: number, y: number, u: number, v: number) {
     // https://en.wikipedia.org/wiki/YCbCr#ITU-R_BT.601_conversion
-    dst[index + 0] = (298.082 * y + 408.583 * u) / 256 - 222.921;
-    dst[index + 1] = (298.082 * y - 100.291 * v - 208.120 * u) / 256 + 135.576;
-    dst[index + 2] = (298.082 * y + 516.412 * v) / 256 - 276.836;
-    dst[index + 3] = 255;
+    dst[index * 4 + 0] = (298.082 * y + 408.583 * u) / 256 - 222.921;
+    dst[index * 4 + 1] = (298.082 * y - 100.291 * v - 208.120 * u) / 256 + 135.576;
+    dst[index * 4 + 2] = (298.082 * y + 516.412 * v) / 256 - 276.836;
+    dst[index * 4 + 3] = 255;
 }
 
-function getMacroblockImageDataFromYuv(data: Uint8ClampedArray[]) {
-    const cCb = data[5], cCr = data[4];
 
-    const id = new ImageData(16, 16, { colorSpace: 'srgb' });
-
-    for (let i = 0; i < 4; i++) {
-        const cY = data[i];
-        const xa = i & 1 ? 8 : 0;
-        const ya = i & 2 ? 8 : 0;
-
-        for (let x = xa; x < xa + 8; x++) {
-            for (let y = ya; y < ya + 8; y++) {
-                const cyi = (x & 7) + 8 * (y & 7);
-                const cci = (x >> 1) + 8 * (y >> 1);
-                writeRgb(id.data, (x + 16 * y) * 4, cY[cyi], cCb[cci], cCr[cci]);
-            }
-        }
-    }
-
-    return id;
-}
+const MB_SIZE = 16;
+const GOB_WIDTH = 11;
+const GOB_HEIGHT = 3;
+const CIF_WIDTH = 2 * GOB_WIDTH * MB_SIZE;
+const CIF_HEIGHT = 6 * GOB_HEIGHT * MB_SIZE;
 
 
 export class Frame {
     protected mba = -1;
     protected gobs: Record<number, GroupOfBlocks> = {};
 
-    public constructor(protected br: BitReader, protected previous: Frame | undefined, protected frameNumber: number) {
+    // This holds the actual color data of the frame
+    protected data: YUV;
+    protected previous: YUV | undefined;
+    protected start: number;
+    public constructor(protected br: BitReader, protected prevFrame: Frame | undefined, protected frameNumber: number) {
+        this.start = br.at;
+
+        this.previous = prevFrame?.data;
+        this.data = {
+            y: this.previous?.y?.slice() ?? new Uint8ClampedArray(CIF_WIDTH * CIF_HEIGHT),
+            cb: this.previous?.cb?.slice() ?? new Uint8ClampedArray(CIF_WIDTH * CIF_HEIGHT / 4),
+            cr: this.previous?.cr?.slice() ?? new Uint8ClampedArray(CIF_WIDTH * CIF_HEIGHT / 4)
+        }
         this.read();
+    }
+
+    protected getMacroBlockCoords(group: number, mba: number): [number, number] {
+        group -= 1;
+        mba -= 1;
+        const gobX = (group & 1) * 176, gobY = (group >> 1) * 48;
+        const mbx = (mba % 11) * 16, mby = floor(mba / 11) * 16;
+
+        return [gobX + mbx, gobY + mby,]
+    }
+
+    protected putIntraBlock(data: Int16Array, blockIndex: number) {
+        let buffer: Uint8ClampedArray;
+        let [sx, sy] = this.getMacroBlockCoords(this.currentGroup, this.mba);
+
+        if (blockIndex < 4) { //y
+            buffer = this.data.y;
+            sx += blockIndex & 1 ? 8 : 0;
+            sy += blockIndex & 2 ? 8 : 0;
+
+            for (let y = sy, di = 0; y < sy + 8; y++) {
+                for (let x = sx; x < sx + 8; x++, di++) {
+                    buffer[y * CIF_WIDTH + x] = data[di];
+                }
+            }
+        } else { //real and true and sane (a bunch of division for 420 subsampling)
+            buffer = blockIndex == 4 ? this.data.cr : this.data.cb;
+            sx /= 2;
+            sy /= 2;
+            for (let y = sy, di = 0; y < sy + 8; y++) {
+                for (let x = sx; x < sx + 8; x++, di++) {
+                    buffer[((y * CIF_WIDTH) >> 1) + x] = data[di];
+                }
+            }
+        }
+    }
+
+    protected putInterBlockBasic(data: Int16Array, blockIndex: number) {
+        let buffer: Uint8ClampedArray;
+
+        let [sx, sy] = this.getMacroBlockCoords(this.currentGroup, this.mba);
+
+        if (blockIndex < 4) { //y
+            buffer = this.data.y;
+            sx += blockIndex & 1 ? 8 : 0;
+            sy += blockIndex & 2 ? 8 : 0;
+
+            for (let y = sy, di = 0; y < sy + 8; y++) {
+                for (let x = sx; x < sx + 8; x++, di++) {
+                    buffer[y * CIF_WIDTH + x] += data[di];
+                }
+            }
+        } else { //real and true and sane (a bunch of division for 420 subsampling)
+            buffer = blockIndex == 4 ? this.data.cr : this.data.cb;
+            sx /= 2;
+            sy /= 2;
+            for (let y = sy, di = 0; y < sy + 8; y++) {
+                for (let x = sx; x < sx + 8; x++, di++) {
+                    buffer[((y * CIF_WIDTH) >> 1) + x] += data[di];
+                }
+            }
+        }
     }
 
     protected readMacroblock(previousMv: MVector, gquant: number): Macroblock | null {
         {
             const address = this.br.readVLC(vlc.MBA_TREE);
             if (address == 34) {
-                throw "MBA stuffing";
+                throw new Error("MBA stuffing");
             }
 
-            if (address == 0) {
+            if (address == 0 || address == vlc.MBA_INVALID) {
                 // start code, this mb is void
                 this.br.move(-vlc.MBA[0].length)
                 return null;
@@ -111,10 +174,15 @@ export class Frame {
                 previousMv = [0, 0];
             }
             this.mba = this.mba == -1 ? address : this.mba + address;
+            // out of data !?
         }
 
-        const mtype = h261.MTYPE[this.br.countLeadingZeroes()];
-        // console.log(this.mba, h261.getMtypeString(mtype));
+        const clz = this.br.countLeadingZeroes();
+        const mtype = h261.MTYPE[clz];
+        if (mtype == undefined) {
+            // TODO(mbabnik): badapple.h261 suicides here
+            throw new Error(`Invalid mtype (clz was ${clz})`); 
+        }
 
         const mb: Macroblock = {
             address: this.mba,
@@ -179,8 +247,6 @@ export class Frame {
                 }
 
                 if (!coded) {
-                    idct2d(tmpBlock);
-                    mb.blocks[i] = { data: new Uint8ClampedArray(tmpBlock.values()), index: i };
                     continue;
                 }
 
@@ -209,31 +275,31 @@ export class Frame {
                     }
                 }
                 idct2d(tmpBlock);
-                mb.blocks[i] = { data: new Uint8ClampedArray(tmpBlock.values()), index: i };
+                if (mtype.prediction & h261.INTER_BIT)
+                    this.putInterBlockBasic(tmpBlock, i)
+                else
+                    this.putIntraBlock(tmpBlock, i);
             }
-            // throw "time to throw pogchamp";
         }
         return mb;
     }
 
+    protected currentGroup = 0;
     protected readGob(gobIndex: number): GroupOfBlocks {
         if (this.br.readInt(16) != h261.GBSC) {
-            throw "Invalid GBSC";
+            throw new Error("Invalid GBSC");
         }
 
         const groupNumber = this.br.readInt(4);
-        if (groupNumber == 0) throw "expected gob, got picture";
+        if (groupNumber == 0) throw new Error("expected gob, got picture");
+        this.currentGroup = groupNumber;
 
         const gquant = this.br.readInt(5);
-
 
         while (this.br.readInt(1)) { // PEI - extra info?
             console.log('Discarding extra byte:', this.br.readInt(8))
         }
 
-        // console.groupCollapsed(`GOB ${groupNumber}`)
-
-        // console.log({ groupNumber, gquant, at: this.br.at.toString(16) })
         const macroblocks = [];
         //read 33 macroblocks
 
@@ -242,14 +308,11 @@ export class Frame {
             const mb = this.readMacroblock(pmv, gquant);
             if (mb === null) break;
 
-            macroblocks[mb.address - 1] = mb;
+            macroblocks.push(mb);
             pmv = mb.mvd ?? [0, 0];
         }
 
         this.mba = -1;
-        // console.log({ CHECKPOINT: this.br.at }) //2203, 4374
-
-        console.groupEnd();
 
         return {
             gquant,
@@ -259,10 +322,12 @@ export class Frame {
     }
 
     protected read() {
-        // console.groupCollapsed(`frame ${this.frameNumber}`)
-
         while (this.br.peekInt(20) != h261.PSC) {
             this.br.readInt(1);
+        }
+        if (this.br.at != this.start) {
+            // console.log('had to skip to get PSC')
+            this.start = this.br.at;
         }
         this.br.readInt(20)
 
@@ -272,8 +337,8 @@ export class Frame {
         // discard three bits of flags
         this.br.readInt(3);
         // TODO(mbabnik): QCIF
-        if (!this.br.readInt(1)) throw "NO QCIF!";
-        if (!this.br.readInt(1)) throw "NO HI_RES!";
+        if (!this.br.readInt(1)) throw new Error("NO QCIF!");
+        if (!this.br.readInt(1)) throw new Error("NO HI_RES!");
 
         // discard "reserved bit"
         this.br.readInt(1);
@@ -286,25 +351,35 @@ export class Frame {
         for (let i = 0; i < 12; i++) {
             this.gobs[i] = this.readGob(i);
         }
-
-        // console.groupEnd();
     }
 
 
     public paint(g: CanvasRenderingContext2D) {
-        for (let gi in this.gobs) {
-            const gobX = ((gi as unknown as number) & 1) * 176,
-                gobY = ((gi as unknown as number) >> 1) * 48;
+        // for (let gi in this.gobs) {
+        //     const gobX = ((gi as unknown as number) & 1) * 176,
+        //         gobY = ((gi as unknown as number) >> 1) * 48;
+        //     const gob = this.gobs[gi];
 
-            const gob = this.gobs[gi];
+        //     for (let mb of gob.macroblocks) {
+        //         const mbx = ((mb.address - 1) % 11) * 16,
+        //             mby = floor((mb.address - 1) / 11) * 16;
+        //         if (mb.type.prediction & h261.INTER_BIT) {
+        //             // apply inter
+        //         } else {
+        //             g.putImageData(getMacroblockImageDataFromYuv(mb), gobX + mbx, gobY + mby)
+        //         }
+        //     }
+        // }
 
-            for (let mb of gob.macroblocks) {
-                const mbx = ((mb.address - 1) % 11) * 16,
-                    mby = floor((mb.address - 1) / 11) * 16;
-
-                g.putImageData(getMacroblockImageDataFromYuv(mb.blocks.map(x => x.data)), gobX + mbx, gobY + mby)
-                // g.putImageData(getMacroblockDebug(mb.blocks.map(x => x.data), ''), gobX + mbx, gobY + mby)
+        const d = g.getImageData(0, 0, CIF_WIDTH, CIF_HEIGHT);
+        for (let y = 0; y < CIF_HEIGHT; y++) {
+            for (let x = 0; x < CIF_WIDTH; x++) {
+                const pos = y * CIF_WIDTH + x;  //this.data.cr[pos>>1] //this.data.cb[pos>>1] //
+                const cpos = (y >> 1) * (CIF_WIDTH >> 1) + (x >> 1);
+                writeRgb(d.data, pos, this.data.y[pos], this.data.cb[cpos], this.data.cr[cpos]);
             }
         }
+        g.putImageData(d, 0, 0);
+        this.previous = undefined; // allow GC to cook
     }
 }

@@ -19,7 +19,7 @@ export function buildTree(arr: Record<number, number[]>): VLCTree {
                 at = at[step] = {};
             } else {
                 const nextAt = at[step];
-                if (typeof nextAt == "number") throw "ohno";
+                if (typeof nextAt == "number") throw new Error("ohno");
                 at = nextAt;
             }
         }

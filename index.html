@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>h261</title>
+    <title>hate261</title>
     <style>
-        #app {
+        #canvas {
             width: 704px;
             height: 576px;
             border: 1px solid red;
@@ -33,11 +33,13 @@
     </style>
   </head>
   <body>
-    <div id="app">
+      <h1>hate.261</h1>
+    <div id="canvas">
         <canvas id="output" width="352" height="288">
         </canvas>
         <img src="mbgrid.svg" id="grid" class="hide" alt="">
     </div>
+
     <script>
         function toggleGrid() {
             const img = document.getElementById('grid');
@@ -45,6 +47,29 @@
         }
     </script>
     <button onclick="toggleGrid()">Toggle Grid</button>
+    <h2>What?</h2>
+    <p>
+        A h261 decoder written in Typescript.
+    </p>
+    <h2>Why?</h2>
+    <p>
+        Beacuse I wanted to implement a video decoder.
+    </p>
+    <h2>How?</h2>
+    <p>
+        barely. I mean look at the output. Does it look like inter frames work?
+    </p>
+    <h2>TODO:</h2>
+    <ul>
+        <li>Fix decoding on the badapple stream</li>
+        <li>Fix INTER blocks (I don't think they are working properly)</li>
+        <li>Add support for Motion Compensation</li>
+        <li>Add support for Filter</li>
+        <br>
+        <li>Support QCIF</li>
+        <li>Add more test videos</li>
+        <li>Compare output with a "real" decoder</li>
+    </ul>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

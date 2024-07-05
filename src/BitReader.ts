@@ -12,7 +12,7 @@ export class BitReader {
     }
 
     public readInt(bits: number) {
-        if (bits > 31) throw "This isn't safe rn";
+        if (bits > 31) throw new Error("This isn't safe rn");
 
         let out = 0;
 
@@ -30,7 +30,7 @@ export class BitReader {
     }
 
     public peekInt(bits: number) {
-        if (bits > 31) throw "This isn't safe rn";
+        if (bits > 31) throw new Error("This isn't safe rn");
 
         let lbit = this.bit, lbyte = this.byte;
 
@@ -66,8 +66,10 @@ export class BitReader {
 
             switch (typeof newAt) {
                 case "undefined":
-                    console.warn("VLC trace:", trace.join(''))
-                    throw "Invalid VLC lookup";
+                    console.warn("VLC trace:", trace.join(''), 'at', this.at.toString(16))
+                    this.move(-trace.length);
+                    console.warn('Context', [...Array(8)].map(_ => this.readInt(8).toString(2).padStart(8, '0')).join())
+                    throw new Error("Invalid VLC lookup");
                 case "number":
                     return newAt;
                 default:
@@ -99,7 +101,11 @@ export class BitReader {
     }
 
     public get at() {
-        return this.byte * 8 + (7 - this.bit);
+        return this.byte * 8 + this.bit;
+    }
+
+    public get available() {
+        return (this.array.length - this.byte) * 8;
     }
 
     public move(offset: number) {
@@ -113,6 +119,5 @@ export class BitReader {
             this.bit += 8;
             this.byte -= 1;
         }
-
     }
 }

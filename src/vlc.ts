@@ -38,7 +38,11 @@ export const MBA = [
     [0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1],
     [0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // uhhhh should fix some random issues (i think ffmpeg aligns frames?)
 ]
+
+export const MBA_INVALID = 35; // see above comment
+
 
 const MVD = {
     [-16]: [0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1],
@@ -279,7 +283,7 @@ const TCOEFF = {
     4095: [0, 0, 0, 0, 0, 1],
 }
 
-export const MBA_TREE: VLCTree = 
+export const MBA_TREE: VLCTree =
 {
     0: {
         0: {
@@ -296,6 +300,7 @@ export const MBA_TREE: VLCTree =
                                                     0: {
                                                         0: {
                                                             0: {
+                                                                0: 35,
                                                                 1: 0
                                                             }
                                                         }

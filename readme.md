@@ -9,6 +9,8 @@ I said this was doable in 1 sitting. I WAS WRONG
 
 **2024-07-05**: Implemented fast DCT, shoutout Nayuki for the 1D impl
 
+**2024-07-05**: Broken INTER blocks after ~9 sittings!
+
 ## Resources
 
 [H.261](https://www.itu.int/rec/T-REC-H.261) - The actual spec, kinda hard to read for a beginner

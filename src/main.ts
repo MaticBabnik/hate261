@@ -2,7 +2,7 @@ import { BitReader } from "./BitReader";
 import { Frame } from "./dec";
 
 const canvas = document.getElementById('output') as HTMLCanvasElement;
-const g = canvas.getContext('2d')!;
+const g = canvas.getContext('2d', { willReadFrequently: true })!;
 
 function canvasCheckerboard() {
     const id = new ImageData(canvas.width, canvas.height, { colorSpace: 'srgb' });
@@ -17,23 +17,33 @@ function canvasCheckerboard() {
     g.putImageData(id, 0, 0);
 }
 
+
+const FRAME_TIME = 1001 / 30;
+
 async function main() {
-    const res = await fetch("badapple-2s.h261");
-    // const res = await fetch("rickroll.h261");
+    // const res = await fetch("badapple-2s.h261");
+    const res = await fetch("rickroll.h261");
     const buf = await res.arrayBuffer();
 
     const br = new BitReader(buf);
 
     let previousFrame: Frame | undefined = undefined;
-    for (let i = 0; i < 1; i++) {
-        console.time('frame')
-        const fr: Frame = new Frame(br, previousFrame, i);
-        console.log(fr);
+    let i = 0;
+
+    let target = performance.now() + FRAME_TIME;
+
+    while (br.available > 20) {
+        console.log((i * FRAME_TIME / 1000).toFixed(2))
+        const fr: Frame = new Frame(br, previousFrame, i++);
+        const nt = performance.now();
+        await new Promise(x => setTimeout(x, target - nt))
+        target = nt + FRAME_TIME;
         fr.paint(g);
-        console.timeEnd('frame')
         previousFrame = fr;
+        await new Promise(x => setTimeout(x, 10));
     }
+
 }
 
 canvasCheckerboard();
-main();
+main()
