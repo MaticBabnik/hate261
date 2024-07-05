@@ -1,6 +1,10 @@
 import { BitReader } from "./BitReader";
 import * as h261 from "./h261def"
 import * as vlc from "./vlc"
+import { idct2d } from "./fastDct";
+
+const { floor } = Math;
+
 
 type MVector = [number, number];
 
@@ -48,54 +52,6 @@ function reconstructDC(level: number): number {
     }
 }
 
-const { SQRT2, PI } = Math;
-const ISQ2 = (1 / SQRT2);
-
-function alpha(x: number) {
-    return x === 0 ? ISQ2 : 1
-}
-
-export function idct(block: Int16Array) {
-    const result = new Uint8ClampedArray(64);
-
-    for (let y = 0; y < 8; y++) {
-        for (let x = 0; x < 8; x++) {
-            let sum = 0;
-
-            for (let v = 0; v < 8; v++) {
-                for (let u = 0; u < 8; u++) {
-
-                    sum += alpha(u) * alpha(v) * block[u + v * 8] *
-                        Math.cos((PI * (2 * x + 1) * u) / 16) *
-                        Math.cos((PI * (2 * y + 1) * v) / 16);
-                }
-            }
-            result[y * 8 + x] = (sum / 4);
-        }
-    }
-    return result;
-}
-
-export function dct(block: Uint8Array) {
-    const result = new Int16Array(64);
-    for (let v = 0; v < 8; v++) {
-        for (let u = 0; u < 8; u++) {
-            let sum = 0;
-
-            for (let y = 0; y < 8; y++) {
-                for (let x = 0; x < 8; x++) {
-                    sum += block[x + y * 8]
-                        * Math.cos((PI * (2 * x + 1) * u) / 16)
-                        * Math.cos((PI * (2 * y + 1) * v) / 16);
-                }
-            }
-
-            result[u + v * 8] = (sum / 4) * alpha(u) * alpha(v);
-        }
-    }
-
-    return result;
-}
 
 
 function writeRgb(dst: Uint8ClampedArray, index: number, y: number, u: number, v: number) {
@@ -127,31 +83,6 @@ function getMacroblockImageDataFromYuv(data: Uint8ClampedArray[]) {
 
     return id;
 }
-
-function getMacroblockDebug(data: Uint8Array[], select: 'y' | 'u' | 'v') {
-    const cCb = data[4], cCr = data[5];
-
-    const id = new ImageData(16, 16, { colorSpace: 'srgb' });
-
-    for (let i = 0; i < 4; i++) {
-        const cY = data[i];
-        const xa = i & 1 ? 8 : 0;
-        const ya = i & 2 ? 8 : 0;
-        for (let x = xa; x < xa + 8; x++) {
-            for (let y = ya; y < ya + 8; y++) {
-                const cci = (x >> 1) + 8 * (y >> 1);
-                const index = (x + 16 * y) * 4;
-                id.data[index + 0] =
-                    id.data[index + 1] =
-                    id.data[index + 2] = select == 'y' ? cY[(x & 7) + 8 * (y & 7)] : (select == 'u' ? cCb[cci] : cCr[cci]);
-                id.data[index + 3] = 255;
-            }
-        }
-    }
-
-    return id;
-}
-void getMacroblockDebug; // shut up typescript
 
 
 export class Frame {
@@ -248,7 +179,8 @@ export class Frame {
                 }
 
                 if (!coded) {
-                    mb.blocks[i] = { data: idct(tmpBlock), index: i };
+                    idct2d(tmpBlock);
+                    mb.blocks[i] = { data: new Uint8ClampedArray(tmpBlock.values()), index: i };
                     continue;
                 }
 
@@ -276,7 +208,8 @@ export class Frame {
                             reconstruct(level, mb.mquant ?? gquant);
                     }
                 }
-                mb.blocks[i] = { data: idct(tmpBlock), index: i };
+                idct2d(tmpBlock);
+                mb.blocks[i] = { data: new Uint8ClampedArray(tmpBlock.values()), index: i };
             }
             // throw "time to throw pogchamp";
         }
@@ -367,7 +300,7 @@ export class Frame {
 
             for (let mb of gob.macroblocks) {
                 const mbx = ((mb.address - 1) % 11) * 16,
-                    mby = Math.floor((mb.address - 1) / 11) * 16;
+                    mby = floor((mb.address - 1) / 11) * 16;
 
                 g.putImageData(getMacroblockImageDataFromYuv(mb.blocks.map(x => x.data)), gobX + mbx, gobY + mby)
                 // g.putImageData(getMacroblockDebug(mb.blocks.map(x => x.data), ''), gobX + mbx, gobY + mby)

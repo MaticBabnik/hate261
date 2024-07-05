@@ -3,7 +3,11 @@
 Toy h.261 decoder.
 I said this was doable in 1 sitting. I WAS WRONG
 
-I got DCT+Quantization working after ~7 sittings...
+## Milestones-ish
+
+**2024-07-02**: I got DCT+Quantization working after ~7 sittings...
+
+**2024-07-05**: Implemented fast DCT, shoutout Nayuki for the 1D impl
 
 ## Resources
 
