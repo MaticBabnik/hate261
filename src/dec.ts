@@ -176,7 +176,7 @@ export class Frame {
             this.mba = this.mba == -1 ? address : this.mba + address;
             // out of data !?
         }
-
+        void previousMv;
         const clz = this.br.countLeadingZeroes();
         const mtype = h261.MTYPE[clz];
         if (mtype == undefined) {
