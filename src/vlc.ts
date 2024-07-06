@@ -1,6 +1,6 @@
-// Variable Length deCoding trees and some helpers 
-
-import type { VLCTree } from "./treegen";
+export interface VLCTree {
+    [index: number]: VLCTree | number
+}
 
 export const MBA = [
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
@@ -38,11 +38,11 @@ export const MBA = [
     [0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1],
     [0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // uhhhh should fix some random issues (i think ffmpeg aligns frames?)
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+    // uhhhh should fix some random issues (i think ffmpeg aligns frames?)
 ]
 
 export const MBA_INVALID = 35; // see above comment
-
 
 const MVD = {
     [-16]: [0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1],
@@ -145,6 +145,7 @@ const CBP = {
     39: [0, 0, 0, 0, 0, 0, 0, 1, 0],
 }
 
+// these are impl. specific (thats why they arent in h261def)
 export const TCOEFF_EOB = 0,
     TCOEFF_FIRST = 1025,
     TCOEFF_ESCAPE = 4095,
@@ -152,8 +153,6 @@ export const TCOEFF_EOB = 0,
 
 const TCOEFF = {
     0: [1, 0],
-    1025: [1, 0],
-    [2048 + 1025]: [1, 1],
     1: [1, 1, 0],
     [2048 + 1]: [1, 1, 1],
     2: [0, 1, 0, 0, 0],
@@ -1087,7 +1086,7 @@ export const TCOEFF_TREE: VLCTree = {
             1: 2049
         }
     }
-}
+};
 
 // tcoeff that is read is
 // sf_r rrrr llll (sign,first?,run,level)

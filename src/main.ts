@@ -1,8 +1,8 @@
 import { BitReader } from "./BitReader";
 import { Frame } from "./dec";
-
+import * as h261 from "./h261def"
 const canvas = document.getElementById('output') as HTMLCanvasElement;
-const g = canvas.getContext('2d', { willReadFrequently: true })!;
+const g = canvas.getContext('2d')!;
 
 function canvasCheckerboard() {
     const id = new ImageData(canvas.width, canvas.height);
@@ -17,34 +17,44 @@ function canvasCheckerboard() {
     g.putImageData(id, 0, 0);
 }
 
-
-const FRAME_TIME = 1001 / 30;
-
-async function main() {
-    // const res = await fetch("badapple-2s.h261");
-    // const res = await fetch("badapple.h261");
-    const res = await fetch("rickroll.h261");
+async function main(file: string) {
+    const res = await fetch(file);
     const buf = await res.arrayBuffer();
-
     const br = new BitReader(buf);
 
     let previousFrame: Frame | undefined = undefined;
     let i = 0;
 
-    let target = performance.now() + FRAME_TIME;
+    // TODO(mbabnik): proper-ish player?
 
-    while (true) {
-        console.log((i * FRAME_TIME / 1000).toFixed(2))
+    // Target frame present time
+    let target = performance.now() + h261.FRAME_TIME;
+
+    while (br.available > 100) {
+        // parse+render frame to YUV
         const fr: Frame = new Frame(br, previousFrame, i++);
+
+        // wait till present Time
         const nt = performance.now();
-        await new Promise(x => setTimeout(x, target - nt))
-        target = nt + FRAME_TIME;
+        while (performance.now() < target) {
+            await new Promise(x => requestAnimationFrame(x))
+        }
+
+        // set next target
+        target = nt + h261.FRAME_TIME;
+        // Convert YUV->RGB and paint
         fr.paint(g);
+        // Store reference; without this INTER frames won't work
         previousFrame = fr;
-        await new Promise(x => setTimeout(x, 10));
     }
 
 }
 
 canvasCheckerboard();
-main()
+
+let file = "badapple.h261";
+if (document.location.search.length >= 2) {
+    file = document.location.search.slice(1);
+}
+
+main(file)

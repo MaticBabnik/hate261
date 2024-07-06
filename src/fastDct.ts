@@ -21,7 +21,7 @@
  *   Software.
  */
 
-// I removed all but the fastDct, shoutout Nayuki
+//(mbabnik): I removed all but the fastDct, shoutout Nayuki
 
 let S = new Float32Array(8);
 let C = new Float32Array(8);
@@ -133,7 +133,7 @@ export function inverseTransform(vector: Int16Array): void {
     vector[7] = (v0 - v7) / 2;
 }
 
-// ---- Extra code by me :3
+// ---- Extra code by me (mbabnik): 
 const { SQRT2, PI, cos } = Math;
 const ISQ2 = (1 / SQRT2);
 

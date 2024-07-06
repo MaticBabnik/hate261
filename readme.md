@@ -1,17 +1,19 @@
 # hate 261
 
 Toy h.261 decoder.
-I said this was doable in 1 sitting. I WAS WRONG
+I said this was doable in 1 sitting. I WAS WRONG!
 
 ## Milestones-ish
 
 **2024-07-02**: I got DCT+Quantization working after ~7 sittings...
 
-**2024-07-05**: Implemented fast DCT, shoutout Nayuki for the 1D impl
+**2024-07-05**: Implemented fast IDCT, shoutout Nayuki for the 1D implementation
 
-**2024-07-05**: Broken INTER blocks after 9 sittings!
+**2024-07-05**: Basic INTER blocks after 9 sittings!
 
 **2024-07-06**: Motion Vectors after 11 sittings!
+
+**2024-07-06**: Working decoder after 12 sittings!
 
 ## Resources
 
@@ -34,3 +36,5 @@ Configuring with the following command will give you a minimal h261 ffplay build
 [High level overview of h261](https://cgg.mff.cuni.cz/~pepca/lectures/pdf/2d-12-h261.pdf) - I wish this was the first thing I read
 
 [Techniques and standards for image, video, and audio coding](https://archive.org/details/techniquesstanda0000raok) - Useful book (you have to create an archive.org account to borrow)
+
+[Fast DCT implementation](https://www.nayuki.io/page/fast-discrete-cosine-transform-algorithms) - This helped me achive real-time decoding (on a 3700X at leasts).

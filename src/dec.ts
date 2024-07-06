@@ -3,29 +3,13 @@ import * as h261 from "./h261def"
 import * as vlc from "./vlc"
 import { idct2d } from "./fastDct";
 
-const { floor, abs } = Math;
-
+const { floor, abs, max, min } = Math;
 
 type MVector = [number, number];
 
-interface Block {
-    index: number,
-    data: Uint8ClampedArray,
-}
-
 interface Macroblock {
-    address: number,
-    type: h261.MType,
     mquant: number | undefined,
     mvd: MVector | undefined,
-    cbp: number,
-    blocks: Block[]
-}
-
-interface GroupOfBlocks {
-    index: number,
-    gquant: number,
-    macroblocks: Macroblock[];
 }
 
 interface YUV {
@@ -34,8 +18,8 @@ interface YUV {
     cr: Uint8ClampedArray,
 }
 
-function clip(x: number, min: number, max: number) {
-    return Math.max(min, Math.min(x, max));
+function clip(x: number, nmin: number, nmax: number) {
+    return max(nmin, min(x, nmax));
 }
 
 function reconstruct(level: number, quant: number) {
@@ -44,9 +28,6 @@ function reconstruct(level: number, quant: number) {
     const qe = (quant % 2 == 0) ? -lp : 0;
     return clip(quant * (2 * level + lp) + qe, -2048, 2047);
 }
-
-// @ts-ignore
-window.reconstruct = reconstruct;
 
 function reconstructDC(level: number): number {
     if (level === 0 || level === 128) {
@@ -66,17 +47,7 @@ function writeRgb(dst: Uint8ClampedArray, index: number, y: number, u: number, v
     dst[index * 4 + 3] = 255;
 }
 
-
-const MB_SIZE = 16;
-const GOB_WIDTH = 11;
-const GOB_HEIGHT = 3;
-const CIF_WIDTH = 2 * GOB_WIDTH * MB_SIZE;
-const CIF_HEIGHT = 6 * GOB_HEIGHT * MB_SIZE;
-
-
 export class Frame {
-    protected gobs: Record<number, GroupOfBlocks> = {};
-
     /**
      * This holds the actual color data of the frame
      */
@@ -97,9 +68,9 @@ export class Frame {
 
         this.previous = prevFrame?.data;
         this.data = {
-            y: this.previous?.y?.slice() ?? new Uint8ClampedArray(CIF_WIDTH * CIF_HEIGHT),
-            cb: this.previous?.cb?.slice() ?? new Uint8ClampedArray(CIF_WIDTH * CIF_HEIGHT / 4),
-            cr: this.previous?.cr?.slice() ?? new Uint8ClampedArray(CIF_WIDTH * CIF_HEIGHT / 4)
+            y: this.previous?.y?.slice() ?? new Uint8ClampedArray(h261.CIF_WIDTH * h261.CIF_HEIGHT),
+            cb: this.previous?.cb?.slice() ?? new Uint8ClampedArray(h261.CIF_WIDTH * h261.CIF_HEIGHT / 4),
+            cr: this.previous?.cr?.slice() ?? new Uint8ClampedArray(h261.CIF_WIDTH * h261.CIF_HEIGHT / 4)
         }
         this.read();
     }
@@ -113,7 +84,7 @@ export class Frame {
         return [gobX + mbx, gobY + mby,]
     }
 
-    protected putIntraBlock(data: Int16Array, blockIndex: number) {
+    protected putIntra(data: Int16Array, blockIndex: number) {
         let buffer: Uint8ClampedArray;
         let [sx, sy] = this.getMacroBlockCoords(this.currentGroup, this.mba);
 
@@ -124,7 +95,7 @@ export class Frame {
 
             for (let y = sy, di = 0; y < sy + 8; y++) {
                 for (let x = sx; x < sx + 8; x++, di++) {
-                    buffer[y * CIF_WIDTH + x] = data[di];
+                    buffer[y * h261.CIF_WIDTH + x] = data[di];
                 }
             }
         } else { //real and true and sane (a bunch of division for 420 subsampling)
@@ -133,13 +104,13 @@ export class Frame {
             sy /= 2;
             for (let y = sy, di = 0; y < sy + 8; y++) {
                 for (let x = sx; x < sx + 8; x++, di++) {
-                    buffer[((y * CIF_WIDTH) >> 1) + x] = data[di];
+                    buffer[((y * h261.CIF_WIDTH) >> 1) + x] = data[di];
                 }
             }
         }
     }
 
-    protected putInterBlockBasic(data: Int16Array, blockIndex: number) {
+    protected putInter(data: Int16Array, blockIndex: number) {
         if (!this.previous) throw new Error("CBA");
         let src: Uint8ClampedArray;
         let dest: Uint8ClampedArray;
@@ -154,7 +125,7 @@ export class Frame {
 
             for (let y = sy, di = 0; y < sy + 8; y++) {
                 for (let x = sx; x < sx + 8; x++, di++) {
-                    dest[y * CIF_WIDTH + x] = src[y * CIF_WIDTH + x] + data[di];
+                    dest[y * h261.CIF_WIDTH + x] = src[y * h261.CIF_WIDTH + x] + data[di];
                 }
             }
         } else { //real and true and sane (a bunch of division for 420 subsampling)
@@ -164,15 +135,14 @@ export class Frame {
             sy /= 2;
             for (let y = sy, di = 0; y < sy + 8; y++) {
                 for (let x = sx; x < sx + 8; x++, di++) {
-                    dest[((y * CIF_WIDTH) >> 1) + x] = src[((y * CIF_WIDTH) >> 1) + x] + data[di];
+                    dest[((y * h261.CIF_WIDTH) >> 1) + x] = src[((y * h261.CIF_WIDTH) >> 1) + x] + data[di];
                 }
             }
         }
     }
 
-    protected putInterBlockMotionVector(data: Int16Array, blockIndex: number, [mvx, mvy]: MVector) {
+    protected putInterMc(data: Int16Array, blockIndex: number, [mvx, mvy]: MVector) {
         if (!this.previous) throw new Error("CBA to handle this!"); //TODO(mbabnik): handle this.
-        // console.log(this.currentGroup, this.mba, [mvx, mvy]);
 
         let src: Uint8ClampedArray;
         let dest: Uint8ClampedArray;
@@ -189,7 +159,7 @@ export class Frame {
 
             for (let y = sy, di = 0; y < sy + 8; y++) {
                 for (let x = sx; x < sx + 8; x++, di++) {
-                    dest[y * CIF_WIDTH + x] = src[(y + mvy) * CIF_WIDTH + x + mvx] + data[di];
+                    dest[y * h261.CIF_WIDTH + x] = src[(y + mvy) * h261.CIF_WIDTH + x + mvx] + data[di];
                 }
             }
         } else {
@@ -204,20 +174,19 @@ export class Frame {
 
             for (let y = sy, di = 0; y < sy + 8; y++) {
                 for (let x = sx; x < sx + 8; x++, di++) {
-                    dest[((y * CIF_WIDTH) >> 1) + x] = src[(((y + mvy) * CIF_WIDTH) >> 1) + (x + mvx)] + data[di];
+                    dest[((y * h261.CIF_WIDTH) >> 1) + x] = src[(((y + mvy) * h261.CIF_WIDTH) >> 1) + (x + mvx)] + data[di];
                 }
             }
         }
     }
 
-    protected putEmptyMotionVector(blockIndex: number, [mvx, mvy]: MVector) {
+    protected putInterMcFil(data: Int16Array, blockIndex: number, [mvx, mvy]: MVector) {
         if (!this.previous) throw new Error("CBA to handle this!"); //TODO(mbabnik): handle this.
+
         let src: Uint8ClampedArray;
         let dest: Uint8ClampedArray;
 
         let [sx, sy] = this.getMacroBlockCoords(this.currentGroup, this.mba);
-
-        // mvx = mvy = 0;
 
         if (blockIndex < 4) { //y
             dest = this.data.y;
@@ -227,7 +196,17 @@ export class Frame {
 
             for (let y = sy, di = 0; y < sy + 8; y++) {
                 for (let x = sx; x < sx + 8; x++, di++) {
-                    dest[y * CIF_WIDTH + x] = src[(y + mvy) * CIF_WIDTH + x + mvx];
+                    if ((y == sy) || (y == sy + 7) || (x == sx) || (x == sx + 7))
+                        dest[y * h261.CIF_WIDTH + x] = src[(y + mvy) * h261.CIF_WIDTH + x + mvx] + data[di];
+                    else {
+                        let sum = 0;
+                        for (let j = 0; j < 3; j++)
+                            for (let i = 0; i < 3; i++)
+                                sum += h261.FILTER[j][i] *
+                                    src[(y + j + mvy - 1) * h261.CIF_WIDTH + x + mvx + i - 1];
+
+                        dest[y * h261.CIF_WIDTH + x] = ~~((1 / 16) * sum) + data[di];
+                    }
                 }
             }
         } else {
@@ -242,7 +221,18 @@ export class Frame {
 
             for (let y = sy, di = 0; y < sy + 8; y++) {
                 for (let x = sx; x < sx + 8; x++, di++) {
-                    dest[((y * CIF_WIDTH) >> 1) + x] = src[(((y + mvy) * CIF_WIDTH) >> 1) + (x + mvx)];
+                    if ((y == sy) || (y == sy + 7) || (x == sx) || (x == sx + 7))
+                        dest[((y * h261.CIF_WIDTH) >> 1) + x] = src[(y + mvy) * h261.CIF_WIDTH + x + mvx] + data[di];
+                    else {
+                        let sum = 0;
+                        for (let j = 0; j < 3; j++)
+                            for (let i = 0; i < 3; i++)
+                                sum += h261.FILTER[j][i] *
+                                    src[(((y + mvy + j - 1) * h261.CIF_WIDTH) >> 1) + (x + mvx + i - 1)];
+
+                        dest[((y * h261.CIF_WIDTH) >> 1) + x] = ~~((1 / 16) * sum) + data[di];
+                    }
+                    dest[((y * h261.CIF_WIDTH) >> 1) + x] = src[(((y + mvy) * h261.CIF_WIDTH) >> 1) + (x + mvx)] + data[di];
                 }
             }
         }
@@ -292,26 +282,18 @@ export class Frame {
                 previousMv = [0, 0];
             }
             this.mba = this.mba == -1 ? address : this.mba + address;
-            // out of data !?
         }
-        void previousMv;
+
         const clz = this.br.countLeadingZeroes();
         const mtype = h261.MTYPE[clz];
 
         if (mtype == undefined) {
-            // TODO(mbabnik): badapple.h261 suicides here
             throw new Error(`Invalid mtype (clz was ${clz})`);
         }
 
         const mb: Macroblock = {
-            address: this.mba,
-            type: mtype,
-
             mquant: undefined,
-            cbp: 0,
             mvd: undefined,
-
-            blocks: []
         };
 
         if (mtype.mq) {
@@ -331,17 +313,17 @@ export class Frame {
             previousMv = mb.mvd;
         }
 
+        const tmpBlock = new Int16Array(64);
+
         if (mtype.tc) {
             let cbp = 0b111111; // intra frames don't set this, but have all coefs.
 
             if (mtype.cb) {
                 cbp = this.br.readVLC(vlc.CBP_TREE);
-            } else if ((mtype.prediction & h261.INTER_BIT)) {
+            } else if ((mtype.type & h261.MT_INTER)) {
                 cbp = 0;
             }
-            mb.cbp = cbp;
 
-            const tmpBlock = new Int16Array(64);
 
             // for each block (in a macroblock)
             block: for (let i = 0; i < 6; i++) {
@@ -350,7 +332,7 @@ export class Frame {
                 let j = 0
                 const coded = !!(cbp & (1 << (5 - i)));
 
-                if (!(mtype.prediction & h261.INTER_BIT)) { // INTRA
+                if (!(mtype.type & h261.MT_INTER)) { // INTRA
                     const dcCoefLvl = this.br.readInt(8);
                     tmpBlock[0] = reconstructDC(dcCoefLvl);
                     j = 1;
@@ -358,18 +340,22 @@ export class Frame {
                     const check = this.br.peekInt(2);
                     if (check & 0x2) {
                         this.br.readInt(2);
-                        tmpBlock[0] = check & 1 ? -1 : 1; // TODO(mbabnik): why?
+                        tmpBlock[0] = check & 1 ? -1 : 1;
                         j = 1;
                     }
                 }
 
                 if (!coded) {
-                    if (mtype.prediction & h261.MOTION_COMPENSATION_BIT)
-                        this.putEmptyMotionVector(i, mb.mvd!)
+                    if (mtype.type & h261.MT_MC) {
+                        if (mtype.type & h261.MT_FILTER)
+                            this.putInterMcFil(tmpBlock, i, mb.mvd!)
+                        else
+                            this.putInterMc(tmpBlock, i, mb.mvd!)
+                    }
                     continue
                 }
 
-                coef: for (; j < 64; j++) {
+                coef: for (; ; j++) {
                     const tcoeff_s = this.br.readVLC(vlc.TCOEFF_TREE);
                     if (tcoeff_s == vlc.TCOEFF_EOB) break; // end of block
                     let run = 0, level = 0;
@@ -387,30 +373,36 @@ export class Frame {
 
                     j += run;
 
-                    if (j < 64) {
-                        //apply transmition order and reconstruction in place
-                        tmpBlock[h261.TCOEFF_REORDER[j]] =
-                            reconstruct(level, mb.mquant ?? gquant);
+                    if (j > 63) {
+                        throw new Error("TCOEFF overflow")
                     }
+                    //apply transmition order and reconstruction in place
+                    tmpBlock[h261.TCOEFF_REORDER[j]] = reconstruct(level, mb.mquant ?? gquant);
                 }
 
                 idct2d(tmpBlock);
-                if (mtype.prediction & h261.INTER_BIT) {
-                    if (mtype.prediction & h261.FILTER_BIT) console.warn('No filter')
-
-                    if (mtype.prediction & h261.MOTION_COMPENSATION_BIT) {
-                        this.putInterBlockMotionVector(tmpBlock, i, mb.mvd!);
+                if (mtype.type & h261.MT_INTER) {
+                    if (mtype.type & h261.MT_MC) {
+                        if (mtype.type & h261.MT_FILTER)
+                            this.putInterMcFil(tmpBlock, i, mb.mvd!)
+                        else
+                            this.putInterMc(tmpBlock, i, mb.mvd!)
                     } else {
-                        this.putInterBlockBasic(tmpBlock, i)
+                        this.putInter(tmpBlock, i)
                     }
 
                 } else {
-                    this.putIntraBlock(tmpBlock, i);
+                    this.putIntra(tmpBlock, i);
                 }
             }
         } else if (mtype.mv) {
+            tmpBlock.fill(0);
+
             for (let i = 0; i < 6; i++) {
-                this.putEmptyMotionVector(i, mb.mvd!);
+                if (mtype.type & h261.MT_FILTER)
+                    this.putInterMcFil(tmpBlock, i, mb.mvd!);
+                else
+                    this.putInterMc(tmpBlock, i, mb.mvd!);
             }
         }
         return mb;
@@ -418,7 +410,7 @@ export class Frame {
 
     protected currentGroup = 0;
 
-    protected readGob(gobIndex: number): GroupOfBlocks {
+    protected readGob() {
         if (this.br.readInt(16) != h261.GBSC) {
             throw new Error("Invalid GBSC");
         }
@@ -429,29 +421,18 @@ export class Frame {
 
         const gquant = this.br.readInt(5);
 
-        while (this.br.readInt(1)) { // PEI - extra info?
-            console.log('Discarding extra byte:', this.br.readInt(8))
+        while (this.br.readInt(1)) {
+            this.br.move(8); // throw PEI away 
         }
-
-        const macroblocks = [];
-        //read 33 macroblocks
 
         let pmv: MVector = [0, 0];
         while (this.mba < 33) {
             const mb = this.readMacroblock(pmv, gquant);
             if (mb === null) break;
-
-            macroblocks.push(mb);
             pmv = mb.mvd ?? [0, 0];
         }
 
         this.mba = -1;
-
-        return {
-            gquant,
-            index: gobIndex,
-            macroblocks
-        }
     }
 
     protected read() {
@@ -459,7 +440,6 @@ export class Frame {
             this.br.readInt(1);
         }
         if (this.br.at != this.start) {
-            // console.log('had to skip to get PSC')
             this.start = this.br.at;
         }
         this.br.readInt(20)
@@ -476,23 +456,23 @@ export class Frame {
         // discard "reserved bit"
         this.br.readInt(1);
 
-        while (this.br.readInt(1)) { // PEI - extra info?
-            console.warn('Unknown PEI:', this.br.readInt(8))
+        while (this.br.readInt(1)) {
+            this.br.move(8); // throw PEI away
         }
 
         // read 12 GOBs
         for (let i = 0; i < 12; i++) {
-            this.gobs[i] = this.readGob(i);
+            this.readGob();
         }
     }
 
     public paint(g: CanvasRenderingContext2D) {
-        const d = new ImageData(CIF_WIDTH, CIF_HEIGHT);
+        const d = new ImageData(h261.CIF_WIDTH, h261.CIF_HEIGHT);
 
-        for (let y = 0; y < CIF_HEIGHT; y++) {
-            for (let x = 0; x < CIF_WIDTH; x++) {
-                const pos = y * CIF_WIDTH + x;
-                const cpos = (y >> 1) * (CIF_WIDTH >> 1) + (x >> 1);
+        for (let y = 0; y < h261.CIF_HEIGHT; y++) {
+            for (let x = 0; x < h261.CIF_WIDTH; x++) {
+                const pos = y * h261.CIF_WIDTH + x;
+                const cpos = (y >> 1) * (h261.CIF_WIDTH >> 1) + (x >> 1);
                 writeRgb(d.data, pos, this.data.y[pos], this.data.cb[cpos], this.data.cr[cpos]);
             }
         }

@@ -1,5 +1,5 @@
 // bit reader class
-import { VLCTree } from "./treegen";
+import { VLCTree } from "./vlc";
 
 export class BitReader {
 

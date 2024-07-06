@@ -1,14 +1,55 @@
 // h262 constants
 
+/**
+ * Picture Start Code
+ */
 export const PSC = 0x10;
-export const PTYPE_IS_CIF = (1 << 2);
-export const PTYPE_STILL = (1 << 1);
-export const GBSC = 1;
-export const INTER_BIT = 1;
-export const MOTION_COMPENSATION_BIT = 2;
-export const FILTER_BIT = 4;
 
-export enum Prediction {
+/**
+ * Group of Blocks Start Code
+ */
+export const GBSC = 1;
+
+// MTYPE.type bits
+export const MT_INTER = 1;
+export const MT_MC = 2;
+export const MT_FILTER = 4;
+
+/**
+ * Size (in pixels) of a macroblock.
+ */
+export const MB_SIZE = 16;
+/**
+ * Width (in macroblocks) of GOB.
+ */
+export const GOB_WIDTH = 11;
+/**
+ * Height (in macroblocks) of GOB.
+ */
+export const GOB_HEIGHT = 3;
+/**
+ * Width (in pixels) of the full frame buffer.
+ */
+export const CIF_WIDTH = 2 * GOB_WIDTH * MB_SIZE;
+/**
+ * Height (in pixels) of the full frame buffer.
+ */
+export const CIF_HEIGHT = 6 * GOB_HEIGHT * MB_SIZE;
+/**
+ * Target frame time
+ */
+export const FRAME_TIME = 1001 / 30;
+
+/**
+ * 3x3 Gausian blur, multiply with 1/16 
+ */
+export const FILTER = [
+    [1, 2, 1],
+    [2, 4, 2],
+    [1, 2, 1]
+]
+
+export enum PredictionType {
     Intra = 0,
     Inter = 1,
     Inter_MC = 3,
@@ -16,52 +57,53 @@ export enum Prediction {
 }
 
 export type MType = {
-    prediction: Prediction
-    mq: boolean, // has MQUANT?
-    mv: boolean, // has MVD?
-    cb: boolean, // has CBP?
-    tc: boolean, // has TCOEFF?
+    /**
+     * Prediction type
+     */
+    type: PredictionType
+    /**
+     * Has per block quantization factor?
+     */
+    mq: boolean,
+    /**
+     * Is motion corrected?
+     */
+    mv: boolean,
+    /**
+     * Has a Coded Block Pattern? (CBP specifies which blocks are encoded)
+     */
+    cb: boolean,
+    /**
+     * Has coefficients aka. block data?
+     */
+    tc: boolean,
 }
-
-export function getPredictionTypeString(p: Prediction) {
-    if (!p) return "Intra";
-    let d = "Inter";
-    if (p & MOTION_COMPENSATION_BIT) d += "+MC";
-    if (p & FILTER_BIT) d += "+FIL";
-
-    return d;
-}
-
-export function getMtypeString(t: MType) {
-    const d = [];
-    if (t.mq) d.push("MQANT");
-    if (t.mv) d.push("MVD");
-    if (t.cb) d.push("CBP");
-    if (t.tc) d.push("TCOEFF");
-
-    return `${getPredictionTypeString(t.prediction)} (${d.join('+')})`;
-}
-
 
 const XX = true;
 const __ = false;
-// LUT, key is ammount of leading zeroes
+
+/**
+ * MTYPE LUT: key is ammount of leading zeroes
+ */
 export const MTYPE: Record<number, MType> = {
-    3: { mq: __, mv: __, cb: __, tc: XX, prediction: Prediction.Intra, },
-    6: { mq: XX, mv: __, cb: __, tc: XX, prediction: Prediction.Intra, },
+    3: { mq: __, mv: __, cb: __, tc: XX, type: PredictionType.Intra, },
+    6: { mq: XX, mv: __, cb: __, tc: XX, type: PredictionType.Intra, },
 
-    0: { mq: __, mv: __, cb: XX, tc: XX, prediction: Prediction.Inter, },
-    4: { mq: XX, mv: __, cb: XX, tc: XX, prediction: Prediction.Inter, },
+    0: { mq: __, mv: __, cb: XX, tc: XX, type: PredictionType.Inter, },
+    4: { mq: XX, mv: __, cb: XX, tc: XX, type: PredictionType.Inter, },
 
-    8: { mq: __, mv: XX, cb: __, tc: __, prediction: Prediction.Inter_MC, },
-    7: { mq: __, mv: XX, cb: XX, tc: XX, prediction: Prediction.Inter_MC, },
-    9: { mq: XX, mv: XX, cb: XX, tc: XX, prediction: Prediction.Inter_MC, },
+    8: { mq: __, mv: XX, cb: __, tc: __, type: PredictionType.Inter_MC, },
+    7: { mq: __, mv: XX, cb: XX, tc: XX, type: PredictionType.Inter_MC, },
+    9: { mq: XX, mv: XX, cb: XX, tc: XX, type: PredictionType.Inter_MC, },
 
-    2: { mq: __, mv: XX, cb: __, tc: __, prediction: Prediction.Inter_MC_FIL, },
-    1: { mq: __, mv: XX, cb: XX, tc: XX, prediction: Prediction.Inter_MC_FIL, },
-    5: { mq: XX, mv: XX, cb: XX, tc: XX, prediction: Prediction.Inter_MC_FIL, },
+    2: { mq: __, mv: XX, cb: __, tc: __, type: PredictionType.Inter_MC_FIL, },
+    1: { mq: __, mv: XX, cb: XX, tc: XX, type: PredictionType.Inter_MC_FIL, },
+    5: { mq: XX, mv: XX, cb: XX, tc: XX, type: PredictionType.Inter_MC_FIL, },
 }
 
+/**
+ * Un-zig-zags the coefficients
+ */
 export const TCOEFF_REORDER = [
     0, 1, 8, 16, 9, 2, 3, 10,
     17, 24, 32, 25, 18, 11, 4, 5,

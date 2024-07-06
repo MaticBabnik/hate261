@@ -2,7 +2,6 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>hate261</title>
     <style>
@@ -34,6 +33,8 @@
   </head>
   <body>
       <h1>hate.261</h1>
+    <a href="/?badapple.h261">Bad apple</a>
+    <a href="/?rickroll.h261">Rick</a>
     <div id="canvas">
         <canvas id="output" width="352" height="288">
         </canvas>
@@ -46,10 +47,10 @@
             img.classList.toggle('hide');
         }
     </script>
-    <button onclick="toggleGrid()">Toggle Grid</button>
+    <button onclick="toggleGrid()">Toggle Macro Block Grid</button>
     <h2>What?</h2>
     <p>
-        A h261 decoder written in Typescript.
+        A h.261 decoder written in Typescript.
     </p>
     <h2>Why?</h2>
     <p>
@@ -57,14 +58,12 @@
     </p>
     <h2>How?</h2>
     <p>
-        barely. I mean look at the output. Does it look like inter frames work?
+        The project's <a href="https://github.com/MaticBabnik/hate261">readme</a>
+        lists some useful articles, books and blogposts I used.
+        </a>
     </p>
     <h2>TODO:</h2>
     <ul>
-        <li>Fix decoding on the badapple stream</li>
-        <li>Verify INTER blocks (I don't think they are working properly)</li>
-        <li>Add support for Filter</li>
-        <br>
         <li>Support QCIF</li>
         <li>Add more test videos</li>
         <li>Compare output with a "real" decoder</li>

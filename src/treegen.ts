@@ -1,9 +1,5 @@
 // use this file to generate VLC trees from tables
-
-export interface VLCTree {
-    [index: number]: VLCTree | number
-}
-
+import { VLCTree } from "./vlc";
 
 export function buildTree(arr: Record<number, number[]>): VLCTree {
     const tree: VLCTree = {};
@@ -31,7 +27,3 @@ export function buildTree(arr: Record<number, number[]>): VLCTree {
 
     return tree;
 }
-
-// console.log(
-//     buildTree(MBA)
-// )
