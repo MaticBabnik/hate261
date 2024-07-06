@@ -75,13 +75,23 @@ const CIF_HEIGHT = 6 * GOB_HEIGHT * MB_SIZE;
 
 
 export class Frame {
-    protected mba = -1;
     protected gobs: Record<number, GroupOfBlocks> = {};
 
-    // This holds the actual color data of the frame
+    /**
+     * This holds the actual color data of the frame
+     */
     protected data: YUV;
+
+    /**
+     * Previous frame's data; used by inter blocks
+     */
     protected previous: YUV | undefined;
+
+    /**
+     * bit index of PSC - useful for debuging the parser
+     */
     protected start: number;
+
     public constructor(protected br: BitReader, protected prevFrame: Frame | undefined, protected frameNumber: number) {
         this.start = br.at;
 
@@ -130,27 +140,31 @@ export class Frame {
     }
 
     protected putInterBlockBasic(data: Int16Array, blockIndex: number) {
-        let buffer: Uint8ClampedArray;
+        if (!this.previous) throw new Error("CBA");
+        let src: Uint8ClampedArray;
+        let dest: Uint8ClampedArray;
 
         let [sx, sy] = this.getMacroBlockCoords(this.currentGroup, this.mba);
 
         if (blockIndex < 4) { //y
-            buffer = this.data.y;
+            dest = this.data.y;
+            src = this.previous.y;
             sx += blockIndex & 1 ? 8 : 0;
             sy += blockIndex & 2 ? 8 : 0;
 
             for (let y = sy, di = 0; y < sy + 8; y++) {
                 for (let x = sx; x < sx + 8; x++, di++) {
-                    buffer[y * CIF_WIDTH + x] += data[di];
+                    dest[y * CIF_WIDTH + x] = src[y * CIF_WIDTH + x] + data[di];
                 }
             }
         } else { //real and true and sane (a bunch of division for 420 subsampling)
-            buffer = blockIndex == 4 ? this.data.cr : this.data.cb;
+            dest = blockIndex == 4 ? this.data.cr : this.data.cb;
+            src = blockIndex == 4 ? this.previous.cr : this.previous.cb;
             sx /= 2;
             sy /= 2;
             for (let y = sy, di = 0; y < sy + 8; y++) {
                 for (let x = sx; x < sx + 8; x++, di++) {
-                    buffer[((y * CIF_WIDTH) >> 1) + x] += data[di];
+                    dest[((y * CIF_WIDTH) >> 1) + x] = src[((y * CIF_WIDTH) >> 1) + x] + data[di];
                 }
             }
         }
@@ -196,6 +210,44 @@ export class Frame {
         }
     }
 
+    protected putEmptyMotionVector(blockIndex: number, [mvx, mvy]: MVector) {
+        if (!this.previous) throw new Error("CBA to handle this!"); //TODO(mbabnik): handle this.
+        let src: Uint8ClampedArray;
+        let dest: Uint8ClampedArray;
+
+        let [sx, sy] = this.getMacroBlockCoords(this.currentGroup, this.mba);
+
+        // mvx = mvy = 0;
+
+        if (blockIndex < 4) { //y
+            dest = this.data.y;
+            src = this.previous.y;
+            sx += blockIndex & 1 ? 8 : 0;
+            sy += blockIndex & 2 ? 8 : 0;
+
+            for (let y = sy, di = 0; y < sy + 8; y++) {
+                for (let x = sx; x < sx + 8; x++, di++) {
+                    dest[y * CIF_WIDTH + x] = src[(y + mvy) * CIF_WIDTH + x + mvx];
+                }
+            }
+        } else {
+            dest = blockIndex == 4 ? this.data.cr : this.data.cb;
+            src = blockIndex == 4 ? this.previous.cr : this.previous.cb
+            sx /= 2;
+            sy /= 2;
+
+            // half the MV since UV is subsampled
+            mvx = ~~(mvx / 2);
+            mvy = ~~(mvy / 2);
+
+            for (let y = sy, di = 0; y < sy + 8; y++) {
+                for (let x = sx; x < sx + 8; x++, di++) {
+                    dest[((y * CIF_WIDTH) >> 1) + x] = src[(((y + mvy) * CIF_WIDTH) >> 1) + (x + mvx)];
+                }
+            }
+        }
+    }
+
     protected isMvcValid(x: number) {
         return (x >= -16 && x <= 15);
     }
@@ -219,6 +271,8 @@ export class Frame {
 
         return previous + n;
     }
+
+    protected mba = -1;
 
     protected readMacroblock(previousMv: MVector, gquant: number): Macroblock | null {
         {
@@ -310,7 +364,9 @@ export class Frame {
                 }
 
                 if (!coded) {
-                    continue;
+                    if (mtype.prediction & h261.MOTION_COMPENSATION_BIT)
+                        this.putEmptyMotionVector(i, mb.mvd!)
+                    continue
                 }
 
                 coef: for (; j < 64; j++) {
@@ -337,6 +393,7 @@ export class Frame {
                             reconstruct(level, mb.mquant ?? gquant);
                     }
                 }
+
                 idct2d(tmpBlock);
                 if (mtype.prediction & h261.INTER_BIT) {
                     if (mtype.prediction & h261.FILTER_BIT) console.warn('No filter')
@@ -347,14 +404,20 @@ export class Frame {
                         this.putInterBlockBasic(tmpBlock, i)
                     }
 
-                } else
+                } else {
                     this.putIntraBlock(tmpBlock, i);
+                }
+            }
+        } else if (mtype.mv) {
+            for (let i = 0; i < 6; i++) {
+                this.putEmptyMotionVector(i, mb.mvd!);
             }
         }
         return mb;
     }
 
     protected currentGroup = 0;
+
     protected readGob(gobIndex: number): GroupOfBlocks {
         if (this.br.readInt(16) != h261.GBSC) {
             throw new Error("Invalid GBSC");
@@ -423,10 +486,9 @@ export class Frame {
         }
     }
 
-
     public paint(g: CanvasRenderingContext2D) {
+        const d = new ImageData(CIF_WIDTH, CIF_HEIGHT);
 
-        const d = g.getImageData(0, 0, CIF_WIDTH, CIF_HEIGHT);
         for (let y = 0; y < CIF_HEIGHT; y++) {
             for (let x = 0; x < CIF_WIDTH; x++) {
                 const pos = y * CIF_WIDTH + x;
@@ -434,6 +496,7 @@ export class Frame {
                 writeRgb(d.data, pos, this.data.y[pos], this.data.cb[cpos], this.data.cr[cpos]);
             }
         }
+
         g.putImageData(d, 0, 0);
         this.previous = undefined; // allow GC to cook
     }
