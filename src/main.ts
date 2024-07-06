@@ -5,7 +5,7 @@ const canvas = document.getElementById('output') as HTMLCanvasElement;
 const g = canvas.getContext('2d', { willReadFrequently: true })!;
 
 function canvasCheckerboard() {
-    const id = new ImageData(canvas.width, canvas.height, { colorSpace: 'srgb' });
+    const id = new ImageData(canvas.width, canvas.height);
     for (let y = 0; y < id.height; y++)
         for (let x = 0; x < id.width; x++) {
             id.data[(x + y * canvas.width) * 4 + 0] =
@@ -22,6 +22,7 @@ const FRAME_TIME = 1001 / 30;
 
 async function main() {
     // const res = await fetch("badapple-2s.h261");
+    // const res = await fetch("badapple.h261");
     const res = await fetch("rickroll.h261");
     const buf = await res.arrayBuffer();
 
@@ -32,7 +33,7 @@ async function main() {
 
     let target = performance.now() + FRAME_TIME;
 
-    while (br.available > 20) {
+    while (true) {
         console.log((i * FRAME_TIME / 1000).toFixed(2))
         const fr: Frame = new Frame(br, previousFrame, i++);
         const nt = performance.now();

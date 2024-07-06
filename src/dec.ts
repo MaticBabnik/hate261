@@ -3,7 +3,7 @@ import * as h261 from "./h261def"
 import * as vlc from "./vlc"
 import { idct2d } from "./fastDct";
 
-const { floor } = Math;
+const { floor, abs } = Math;
 
 
 type MVector = [number, number];
@@ -156,6 +156,70 @@ export class Frame {
         }
     }
 
+    protected putInterBlockMotionVector(data: Int16Array, blockIndex: number, [mvx, mvy]: MVector) {
+        if (!this.previous) throw new Error("CBA to handle this!"); //TODO(mbabnik): handle this.
+        // console.log(this.currentGroup, this.mba, [mvx, mvy]);
+
+        let src: Uint8ClampedArray;
+        let dest: Uint8ClampedArray;
+
+        let [sx, sy] = this.getMacroBlockCoords(this.currentGroup, this.mba);
+
+        // mvx = mvy = 0;
+
+        if (blockIndex < 4) { //y
+            dest = this.data.y;
+            src = this.previous.y;
+            sx += blockIndex & 1 ? 8 : 0;
+            sy += blockIndex & 2 ? 8 : 0;
+
+            for (let y = sy, di = 0; y < sy + 8; y++) {
+                for (let x = sx; x < sx + 8; x++, di++) {
+                    dest[y * CIF_WIDTH + x] = src[(y + mvy) * CIF_WIDTH + x + mvx] + data[di];
+                }
+            }
+        } else {
+            dest = blockIndex == 4 ? this.data.cr : this.data.cb;
+            src = blockIndex == 4 ? this.previous.cr : this.previous.cb
+            sx /= 2;
+            sy /= 2;
+
+            // half the MV since UV is subsampled
+            mvx = ~~(mvx / 2);
+            mvy = ~~(mvy / 2);
+
+            for (let y = sy, di = 0; y < sy + 8; y++) {
+                for (let x = sx; x < sx + 8; x++, di++) {
+                    dest[((y * CIF_WIDTH) >> 1) + x] = src[(((y + mvy) * CIF_WIDTH) >> 1) + (x + mvx)] + data[di];
+                }
+            }
+        }
+    }
+
+    protected isMvcValid(x: number) {
+        return (x >= -16 && x <= 15);
+    }
+
+    protected readMvComponent(previous: number): number {
+        const n = this.br.readVLC(vlc.MVD_TREE)
+        let a = abs(n);
+
+        if (a > 1) {
+            let b = a - 32
+            if (n < 0) {
+                b *= -1;
+            }
+
+            const mva = previous + n;
+            const mvb = previous + b;
+            if (this.isMvcValid(mva)) return mva;
+            if (this.isMvcValid(mvb)) return mvb;
+            throw new Error(`Invalid MV component (prev=${previous} a=${mva} b=${mvb})`);
+        }
+
+        return previous + n;
+    }
+
     protected readMacroblock(previousMv: MVector, gquant: number): Macroblock | null {
         {
             const address = this.br.readVLC(vlc.MBA_TREE);
@@ -179,9 +243,10 @@ export class Frame {
         void previousMv;
         const clz = this.br.countLeadingZeroes();
         const mtype = h261.MTYPE[clz];
+
         if (mtype == undefined) {
             // TODO(mbabnik): badapple.h261 suicides here
-            throw new Error(`Invalid mtype (clz was ${clz})`); 
+            throw new Error(`Invalid mtype (clz was ${clz})`);
         }
 
         const mb: Macroblock = {
@@ -204,14 +269,12 @@ export class Frame {
                 previousMv = [0, 0];
             }
 
-            const mvd1 = this.br.readVlcOr(vlc.MVD_TREE, -1);
-            //TODO(mbabnik): motion vectors
-            const mvd2 = this.br.readVlcOr(vlc.MVD_TREE, -1);
+            mb.mvd = [
+                this.readMvComponent(previousMv[0]),
+                this.readMvComponent(previousMv[1])
+            ];
 
-            void mvd1;
-            void mvd2;
-
-            mb.mvd = [0, 0];
+            previousMv = mb.mvd;
         }
 
         if (mtype.tc) {
@@ -275,9 +338,16 @@ export class Frame {
                     }
                 }
                 idct2d(tmpBlock);
-                if (mtype.prediction & h261.INTER_BIT)
-                    this.putInterBlockBasic(tmpBlock, i)
-                else
+                if (mtype.prediction & h261.INTER_BIT) {
+                    if (mtype.prediction & h261.FILTER_BIT) console.warn('No filter')
+
+                    if (mtype.prediction & h261.MOTION_COMPENSATION_BIT) {
+                        this.putInterBlockMotionVector(tmpBlock, i, mb.mvd!);
+                    } else {
+                        this.putInterBlockBasic(tmpBlock, i)
+                    }
+
+                } else
                     this.putIntraBlock(tmpBlock, i);
             }
         }
@@ -355,26 +425,11 @@ export class Frame {
 
 
     public paint(g: CanvasRenderingContext2D) {
-        // for (let gi in this.gobs) {
-        //     const gobX = ((gi as unknown as number) & 1) * 176,
-        //         gobY = ((gi as unknown as number) >> 1) * 48;
-        //     const gob = this.gobs[gi];
-
-        //     for (let mb of gob.macroblocks) {
-        //         const mbx = ((mb.address - 1) % 11) * 16,
-        //             mby = floor((mb.address - 1) / 11) * 16;
-        //         if (mb.type.prediction & h261.INTER_BIT) {
-        //             // apply inter
-        //         } else {
-        //             g.putImageData(getMacroblockImageDataFromYuv(mb), gobX + mbx, gobY + mby)
-        //         }
-        //     }
-        // }
 
         const d = g.getImageData(0, 0, CIF_WIDTH, CIF_HEIGHT);
         for (let y = 0; y < CIF_HEIGHT; y++) {
             for (let x = 0; x < CIF_WIDTH; x++) {
-                const pos = y * CIF_WIDTH + x;  //this.data.cr[pos>>1] //this.data.cb[pos>>1] //
+                const pos = y * CIF_WIDTH + x;
                 const cpos = (y >> 1) * (CIF_WIDTH >> 1) + (x >> 1);
                 writeRgb(d.data, pos, this.data.y[pos], this.data.cb[cpos], this.data.cr[cpos]);
             }
